@@ -22,6 +22,8 @@ python train.py config/train_rocmstories.py --compile=False --batch_size=32
 产生样本:
 python sample.py --out_dir=out-shakespeare-char
 
+python eval.py data/rocmstories/test.txt
+
 =================================================
 
         compile TRUE | compile FALSE     

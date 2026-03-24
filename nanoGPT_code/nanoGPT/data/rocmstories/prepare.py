@@ -1,71 +1,82 @@
-"""
-Prepare the ROCStories dataset for character-level language modeling.
-Reads local train.txt and test.txt, then saves train.bin, val.bin and meta.pkl.
+"""Prepare ROCStories with GPT-2 tokenization for nanoGPT.
+
+Reads local train.txt and test.txt (one story per line).
+train.txt is split 90/10 into train.bin and val.bin.
+test.txt is saved as test.bin.
+
+Outputs:
+- train.bin
+- val.bin
+- test.bin
+- meta.pkl
 """
 
 import os
 import pickle
+
 import numpy as np
+import tiktoken
 
-data_dir = os.path.dirname(__file__)
 
-train_file_path = os.path.join(data_dir, 'train.txt')
-test_file_path = os.path.join(data_dir, 'test.txt')
+OUT_DIR = os.path.dirname(__file__)
 
-with open(train_file_path, 'r', encoding='utf-8') as f:
-    train_text = f.read()
 
-with open(test_file_path, 'r', encoding='utf-8') as f:
-    test_text = f.read()
+def read_stories(path):
+    with open(path, "r", encoding="utf-8") as f:
+        return [line.strip() for line in f if line.strip()]
 
-print(f"length of train set in characters: {len(train_text):,}")
-print(f"length of test set in characters:  {len(test_text):,}")
 
-# 用 train+test 一起建立字符表，避免测试集出现未见字符
-data = train_text + test_text
+def encode_stories(stories, split_name, enc, eot):
+    print(f"Encoding {split_name} ({len(stories):,} stories)...")
+    ids = []
+    for i, story in enumerate(stories):
+        story_ids = enc.encode_ordinary(story)
+        story_ids.append(eot)
+        ids.extend(story_ids)
+        if (i + 1) % 10000 == 0:
+            print(f"  {split_name}: {i + 1:,} stories processed")
+    return np.array(ids, dtype=np.uint16)
 
-chars = sorted(list(set(data)))
-vocab_size = len(chars)
 
-print("all the unique characters:", ''.join(chars))
-print(f"vocab size: {vocab_size:,}")
+def main():
+    enc = tiktoken.get_encoding("gpt2")
+    eot = enc.eot_token
 
-# create a mapping from characters to integers
-stoi = {ch: i for i, ch in enumerate(chars)}
-itos = {i: ch for i, ch in enumerate(chars)}
+    # --- train.txt -> train.bin + val.bin (90/10 split) ---
+    train_txt = os.path.join(OUT_DIR, "train.txt")
+    all_train = read_stories(train_txt)
+    split_at = int(len(all_train) * 0.9)
+    train_stories = all_train[:split_at]
+    val_stories = all_train[split_at:]
+    print(f"train.txt: {len(all_train):,} stories -> train {len(train_stories):,} / val {len(val_stories):,}")
 
-def encode(s):
-    return [stoi[c] for c in s]
+    train_ids = encode_stories(train_stories, "train", enc, eot)
+    val_ids = encode_stories(val_stories, "val", enc, eot)
 
-def decode(l):
-    return ''.join([itos[i] for i in l])
+    # --- test.txt -> test.bin ---
+    test_txt = os.path.join(OUT_DIR, "test.txt")
+    test_stories = read_stories(test_txt)
+    print(f"test.txt: {len(test_stories):,} stories")
+    test_ids = encode_stories(test_stories, "test", enc, eot)
 
-# 这里不再自己做 90/10 split
-# 直接使用你已经准备好的:
-# train.txt -> train.bin
-# test.txt  -> val.bin
-train_ids = encode(train_text)
-val_ids = encode(test_text)
+    print(f"train has {len(train_ids):,} tokens")
+    print(f"val   has {len(val_ids):,} tokens")
+    print(f"test  has {len(test_ids):,} tokens")
 
-print(f"train has {len(train_ids):,} tokens")
-print(f"val has   {len(val_ids):,} tokens")
+    train_ids.tofile(os.path.join(OUT_DIR, "train.bin"))
+    val_ids.tofile(os.path.join(OUT_DIR, "val.bin"))
+    test_ids.tofile(os.path.join(OUT_DIR, "test.bin"))
 
-# export to bin files
-train_ids = np.array(train_ids, dtype=np.uint16)
-val_ids = np.array(val_ids, dtype=np.uint16)
+    meta = {
+        "vocab_size": enc.n_vocab,
+        "tokenizer": "gpt2",
+        "eot_token": eot,
+    }
+    with open(os.path.join(OUT_DIR, "meta.pkl"), "wb") as f:
+        pickle.dump(meta, f)
 
-train_ids.tofile(os.path.join(data_dir, 'train.bin'))
-val_ids.tofile(os.path.join(data_dir, 'val.bin'))
+    print("Done. Saved train.bin, val.bin, test.bin, meta.pkl")
 
-# save meta information
-meta = {
-    'vocab_size': vocab_size,
-    'itos': itos,
-    'stoi': stoi,
-}
 
-with open(os.path.join(data_dir, 'meta.pkl'), 'wb') as f:
-    pickle.dump(meta, f)
-
-print("Done.")
-print(f"Saved to {data_dir}/train.bin, {data_dir}/val.bin, {data_dir}/meta.pkl")
+if __name__ == "__main__":
+    main()

@@ -42,7 +42,11 @@ def _read_txt_paragraphs(path):
     with open(path, 'r', encoding='utf-8') as f:
         content = f.read()
     parts = content.split('\n\n')
-    return [p.strip() for p in parts if p.strip()]
+    paragraphs = [p.strip() for p in parts if p.strip()]
+    if len(paragraphs) <= 1:
+        # Fallback for files where each line is one sample/story.
+        paragraphs = [ln.strip() for ln in content.splitlines() if ln.strip()]
+    return paragraphs
 
 
 def _read_jsonl_paragraphs(path, text_key):
@@ -150,8 +154,13 @@ if load_meta:
     print(f"Loading meta from {meta_path}...")
     with open(meta_path, 'rb') as f:
         meta = pickle.load(f)
-    stoi = meta['stoi']
-    encode = lambda s: [stoi[c] for c in s]
+    if 'stoi' in meta:
+        stoi = meta['stoi']
+        encode = lambda s: [stoi[c] for c in s]
+    else:
+        print("meta.pkl does not contain stoi/itos, using GPT-2 tokenizer...")
+        enc = tiktoken.get_encoding("gpt2")
+        encode = lambda s: enc.encode(s, allowed_special={"<|endoftext|>"})
 else:
     print("No meta.pkl found, assuming GPT-2 encodings...")
     enc = tiktoken.get_encoding("gpt2")
