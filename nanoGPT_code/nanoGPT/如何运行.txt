@@ -1,0 +1,9 @@
+数据预处理, 生成train.bin和val.bin:
+python data/shakespeare_char/prepare.py
+
+训练模型:
+python train.py config/train_shakespeare_char.py
+
+产生样本:
+python sample.py --out_dir=out-shakespeare-char
+
