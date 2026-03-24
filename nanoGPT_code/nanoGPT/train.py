@@ -252,6 +252,8 @@ t0 = time.time()
 local_iter_num = 0 # number of iterations in the lifetime of this process
 raw_model = model.module if ddp else model # unwrap DDP container if needed
 running_mfu = -1.0
+
+start_time = time.time()
 while True:
 
     # determine and set the learning rate for this iteration
@@ -331,6 +333,9 @@ while True:
     # termination conditions
     if iter_num > max_iters:
         break
+end_time = time.time()
 
+total_time = end_time - start_time
+print(f"Training completed in {total_time:.2f} seconds ({total_time/60:.2f} minutes)")
 if ddp:
     destroy_process_group()

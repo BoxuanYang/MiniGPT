@@ -1,9 +1,35 @@
+=====训练shakespear text的工作流=================
+
 数据预处理, 生成train.bin和val.bin:
 python data/shakespeare_char/prepare.py
 
 训练模型:
-python train.py config/train_shakespeare_char.py
+CUDA_VISIBLE_DEVICES=7 python train.py config/train_shakespeare_char.py --compile=False --batch_size=32
+
 
 产生样本:
 python sample.py --out_dir=out-shakespeare-char
 
+=====rocmstories text的工作流=================
+
+数据预处理, 生成train.bin和val.bin:
+python data/rocmstories/prepare.py
+
+训练模型:
+python train.py config/train_rocmstories.py --compile=False --batch_size=32
+
+
+产生样本:
+python sample.py --out_dir=out-shakespeare-char
+
+=================================================
+
+        compile TRUE | compile FALSE     
+4090    2464.19ms    | 2680.29ms
+5090    3634.66ms    | 3972.56ms
+
+
+python train.py config/train_shakespeare_char.py --compile=False --batch_size=32
+
+4090 1466.37ms
+5090 2330.91ms
