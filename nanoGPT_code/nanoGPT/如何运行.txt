@@ -16,22 +16,45 @@ python sample.py --out_dir=out-shakespeare-char
 python data/rocmstories/prepare.py
 
 训练模型:
-python train.py config/train_rocmstories.py --compile=False --batch_size=32
+CUDA_VISIBLE_DEVICES=1 python train.py config/train_rocmstories.py --compile=False --batch_size=32
 
+评估模型:
+python eval_w_endoftext.py   \
+ --init_from=resume   \
+ --out_dir=out-rocmstories   \
+ --input_file=data/rocmstories/test.txt   \
+ --device=cuda
 
 产生样本:
-python sample.py --out_dir=out-shakespeare-char
-
-python eval.py data/rocmstories/test.txt
-
-=================================================
-
-        compile TRUE | compile FALSE     
-4090    2464.19ms    | 2680.29ms
-5090    3634.66ms    | 3972.56ms
+python sample_batch.py --init_from=resume --out_dir=out-rocmstories --device=cpu
 
 
-python train.py config/train_shakespeare_char.py --compile=False --batch_size=32
 
-4090 1466.37ms
-5090 2330.91ms
+(learning_rate = 1e-3, block_size = 128, n_embd=384):
+steps PPL 
+5000  28.38 (val loss 3.2920)
+6000  28.88 (val loss 3.29)
+8000  27.62 (val loss 3.2164)
+9000  25.61 (val loss 3.2066)
+11000 25.52 (val loss 3.2004)
+12000 25.65 (val loss 3.2201)
+13000 25.85 (val loss 3.2094)
+
+
+(learning_rate = 1e-3, block_size = 128, n_embd=288):
+steps PPL 
+5000  29.83 (val loss 3.3253)
+9000  26.35 (val loss 3.2283)
+13000 25.62 (val loss 3.1964)
+15000 25.56 (val loss: 3.1977)
+
+(learning_rate = 1e-3, block_size = 256):
+5000 28.39 (val loss 3.2032)
+
+
+
+
+(learning_rate = 4e-4):
+steps PPL 
+7000  29.56
+15000 27.27(val loss 3.2070, 25.62)

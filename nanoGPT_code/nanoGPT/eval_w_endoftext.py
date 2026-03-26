@@ -1,10 +1,17 @@
 """
-Evaluate GPT/GPT-2 on a paragraph file and report average loss and perplexity.
+eval_with_endoftext.py
+
+Evaluate a nanoGPT checkpoint on text data, but append <|endoftext|>
+to each paragraph/story before tokenization.
+
+This is for debugging distribution mismatch:
+- teacher eval.py: raw story text only
+- this script: raw story text + <|endoftext|>
 
 Supported input formats:
-- .txt: paragraphs separated by one or more blank lines
-- .jsonl: one JSON object per line, text field configurable by `json_text_key`
-- .json: list[str] or list[dict], text field configurable by `json_text_key`
+- .txt: paragraphs separated by blank lines; if no blank lines, fallback to one line = one story
+- .jsonl
+- .json
 """
 
 import json
@@ -19,20 +26,24 @@ import tiktoken
 from model import GPT, GPTConfig
 
 # -----------------------------------------------------------------------------
-# model/load config (same pattern as sample.py)
-init_from = 'gpt2'  # 'resume' or a GPT-2 variant (e.g. 'gpt2-medium')
-out_dir = 'out'  # used when init_from == 'resume'
-device = 'cuda'  # 'cpu', 'cuda', 'cuda:0', ...
+# model/load config
+init_from = 'gpt2'   # 'resume' or a GPT-2 variant
+out_dir = 'out'      # used when init_from == 'resume'
+device = 'cuda'      # 'cpu', 'cuda', 'cuda:0', ...
 dtype = 'bfloat16' if torch.cuda.is_available() and torch.cuda.is_bf16_supported() else 'float16'
 compile = False
 seed = 1337
 
 # data/eval config
-input_file = 'data/rocstories/eval_stories.txt'
-input_format = 'txt'  # 'auto' | 'txt' | 'jsonl' | 'json'
+input_file = 'data/rocmstories/test.txt'
+input_format = 'txt'   # 'auto' | 'txt' | 'jsonl' | 'json'
 json_text_key = 'text'
-max_paragraphs = -1  # -1 means all
-print_first_n = 3  # preview first N loaded paragraphs
+max_paragraphs = -1    # -1 means all
+print_first_n = 3      # preview first N loaded paragraphs
+
+# new behavior
+append_eot = True
+eot_token = "<|endoftext|>"
 
 exec(open('configurator.py').read())  # allows overrides from CLI / config file
 # -----------------------------------------------------------------------------
@@ -113,6 +124,15 @@ def load_paragraphs(path, fmt, text_key):
     raise ValueError(f"Unsupported input_format: {fmt}")
 
 
+def maybe_append_eot(text: str, eot: str, enabled: bool) -> str:
+    text = text.strip()
+    if not enabled:
+        return text
+    if text.endswith(eot):
+        return text
+    return text + eot
+
+
 torch.manual_seed(seed)
 if torch.cuda.is_available():
     torch.cuda.manual_seed(seed)
@@ -147,26 +167,26 @@ model.to(device)
 if compile:
     model = torch.compile(model)
 
-# tokenizer (same behavior as sample.py)
+# tokenizer
 load_meta = False
 if init_from == 'resume' and 'config' in checkpoint and 'dataset' in checkpoint['config']:
     meta_path = os.path.join('data', checkpoint['config']['dataset'], 'meta.pkl')
     load_meta = os.path.exists(meta_path)
+
 if load_meta:
     print(f"Loading meta from {meta_path}...")
     with open(meta_path, 'rb') as f:
         meta = pickle.load(f)
     if 'stoi' in meta:
-        stoi = meta['stoi']
-        encode = lambda s: [stoi[c] for c in s]
+        raise ValueError("This script expects GPT-2 BPE style tokenization, not char-level stoi/itos.")
     else:
         print("meta.pkl does not contain stoi/itos, using GPT-2 tokenizer...")
         enc = tiktoken.get_encoding("gpt2")
-        encode = lambda s: enc.encode(s, allowed_special={"<|endoftext|>"})
+        encode = lambda s: enc.encode(s, allowed_special={eot_token})
 else:
     print("No meta.pkl found, assuming GPT-2 encodings...")
     enc = tiktoken.get_encoding("gpt2")
-    encode = lambda s: enc.encode(s, allowed_special={"<|endoftext|>"})
+    encode = lambda s: enc.encode(s, allowed_special={eot_token})
 
 paragraphs, used_fmt = load_paragraphs(input_file, input_format, json_text_key)
 if max_paragraphs is not None and max_paragraphs >= 0:
@@ -177,8 +197,8 @@ if len(paragraphs) == 0:
 
 print(f"Loaded {len(paragraphs)} paragraphs from {input_file} (format={used_fmt})")
 for i, p in enumerate(paragraphs[:max(0, int(print_first_n))]):
-    preview = p.replace('\n', ' ')[:120]
-    print(f"[preview {i}] {preview}{'...' if len(p) > 120 else ''}")
+    preview = maybe_append_eot(p, eot_token, append_eot).replace('\n', ' ')[:140]
+    print(f"[preview {i}] {preview}{'...' if len(preview) > 140 else ''}")
 
 total_nll = 0.0
 total_tokens = 0
@@ -189,8 +209,9 @@ block_size = model.config.block_size
 with torch.no_grad():
     with ctx:
         for para in paragraphs:
+            para = maybe_append_eot(para, eot_token, append_eot)
             token_ids = encode(para)
-            # Need at least two tokens to define next-token prediction.
+
             if len(token_ids) < 2:
                 skipped_short += 1
                 continue
@@ -198,7 +219,6 @@ with torch.no_grad():
             pos = 0
             para_pred_tokens = len(token_ids) - 1
             while pos < para_pred_tokens:
-                # Build a contiguous chunk and its shifted targets.
                 inp = token_ids[pos: pos + block_size]
                 tgt = token_ids[pos + 1: pos + 1 + block_size]
                 if len(tgt) == 0:
@@ -208,7 +228,7 @@ with torch.no_grad():
 
                 x = torch.tensor(inp, dtype=torch.long, device=device)[None, :]
                 y = torch.tensor(tgt, dtype=torch.long, device=device)[None, :]
-                _, loss = model(x, y)  # mean CE over chunk tokens
+                _, loss = model(x, y)
 
                 n_tok = len(tgt)
                 total_nll += loss.item() * n_tok
@@ -225,8 +245,10 @@ ppl = math.exp(avg_loss)
 
 print("----- Evaluation Results -----")
 print(f"model           : {init_from}")
+print(f"append_eot      : {append_eot}")
+print(f"eot_token       : {eot_token}")
 print(f"paragraphs_used : {used_paragraphs}")
 print(f"paragraphs_skip : {skipped_short}")
 print(f"pred_tokens     : {total_tokens}")
-print(f"avg_loss        : {avg_loss:.3f}")
-print(f"ppl             : {ppl:.2f}")
+print(f"avg_loss        : {avg_loss:.6f}")
+print(f"ppl             : {ppl:.6f}")
