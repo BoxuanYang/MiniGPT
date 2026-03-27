@@ -42,11 +42,7 @@ def _read_txt_paragraphs(path):
     with open(path, 'r', encoding='utf-8') as f:
         content = f.read()
     parts = content.split('\n\n')
-    paragraphs = [p.strip() for p in parts if p.strip()]
-    if len(paragraphs) <= 1:
-        # Fallback for files where each line is one sample/story.
-        paragraphs = [ln.strip() for ln in content.splitlines() if ln.strip()]
-    return paragraphs
+    return [p.strip() for p in parts if p.strip()]
 
 
 def _read_jsonl_paragraphs(path, text_key):
@@ -126,7 +122,6 @@ ctx = nullcontext() if device_type == 'cpu' else torch.amp.autocast(device_type=
 # model
 if init_from == 'resume':
     ckpt_path = os.path.join(out_dir, 'ckpt.pt')
-    print(f"Loading model from {ckpt_path}...")
     checkpoint = torch.load(ckpt_path, map_location=device)
     gptconf = GPTConfig(**checkpoint['model_args'])
     model = GPT(gptconf)
@@ -137,7 +132,6 @@ if init_from == 'resume':
             state_dict[k[len(unwanted_prefix):]] = state_dict.pop(k)
     model.load_state_dict(state_dict)
 elif init_from.startswith('gpt2'):
-    print(f"Loading pretrained GPT-2 model: {init_from}...")
     model = GPT.from_pretrained(init_from, dict(dropout=0.0))
 else:
     raise ValueError(f"Unsupported init_from: {init_from}")
@@ -156,13 +150,8 @@ if load_meta:
     print(f"Loading meta from {meta_path}...")
     with open(meta_path, 'rb') as f:
         meta = pickle.load(f)
-    if 'stoi' in meta:
-        stoi = meta['stoi']
-        encode = lambda s: [stoi[c] for c in s]
-    else:
-        print("meta.pkl does not contain stoi/itos, using GPT-2 tokenizer...")
-        enc = tiktoken.get_encoding("gpt2")
-        encode = lambda s: enc.encode(s, allowed_special={"<|endoftext|>"})
+    stoi = meta['stoi']
+    encode = lambda s: [stoi[c] for c in s]
 else:
     print("No meta.pkl found, assuming GPT-2 encodings...")
     enc = tiktoken.get_encoding("gpt2")
