@@ -6,9 +6,9 @@ tokenizes with the GPT-2 BPE tokenizer (tiktoken),
 and writes train.bin / val.bin / test.bin / meta.pkl.
 
 Story format used (aligns with eval.py's _read_txt_paragraphs):
-  - Each story is collapsed to a single line (internal whitespace → single space)
-  - Each story is terminated with <|endoftext|>
-  - Stories are joined with \n\n so there is one blank line between them
+    - Each story is collapsed to a single line (internal whitespace → single space)
+    - No special tokens are inserted between stories
+    - Stories are joined with \n\n so there is one blank line between them
 
 Split:
   - train.txt → 90 % train  /  10 % val   (story-level shuffle, seed 1337)
@@ -33,7 +33,6 @@ DATA_DIR  = os.path.dirname(os.path.abspath(__file__))
 TRAIN_SRC = os.path.join(DATA_DIR, "train.txt")
 TEST_SRC  = os.path.join(DATA_DIR, "test.txt")
 
-EOT = "<|endoftext|>"   # GPT-2 end-of-text special token
 SPLIT_RATIO = 0.9       # fraction of train.txt stories used for training
 RANDOM_SEED = 1337
 
@@ -74,9 +73,9 @@ def normalize_story(story: str) -> str:
 def format_stories(stories: list[str]) -> str:
     """
     Turn a list of normalized stories into the final text corpus:
-      <story1><|endoftext|>\n\n<story2><|endoftext|>\n\n...
+      <story1>\n\n<story2>\n\n...
     """
-    return "\n\n".join(normalize_story(s) + EOT for s in stories)
+    return "\n\n".join(normalize_story(s) for s in stories)
 
 
 # ---------------------------------------------------------------------------
@@ -91,7 +90,7 @@ def encode_stories(stories: list[str], enc: tiktoken.Encoding) -> np.ndarray:
     data at inference time).
     """
     corpus = format_stories(stories)
-    ids = enc.encode(corpus, allowed_special={EOT})
+    ids = enc.encode(corpus)
     return np.array(ids, dtype=np.uint16)
 
 
@@ -153,8 +152,6 @@ def main() -> None:
     meta = {
         "vocab_size" : enc.n_vocab,
         "tokenizer"  : "gpt2",
-        "eot_token"  : EOT,
-        "eot_token_id": enc.eot_token,
         "train_stories": len(train_stories),
         "val_stories"  : len(val_stories),
         "test_stories" : len(test_stories),
