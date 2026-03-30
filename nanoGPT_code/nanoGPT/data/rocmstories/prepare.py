@@ -7,8 +7,8 @@ and writes train.bin / val.bin / test.bin / meta.pkl.
 
 Story format used (aligns with eval.py's _read_txt_paragraphs):
     - Each story is collapsed to a single line (internal whitespace → single space)
-    - No special tokens are inserted between stories
-    - Stories are joined with \n\n so there is one blank line between them
+    - After each story, append one GPT-2 endoftext token
+    - Then append \n\n so there is one blank line between stories
 
 Split:
   - train.txt → 90 % train  /  10 % val   (story-level shuffle, seed 1337)
@@ -70,14 +70,6 @@ def normalize_story(story: str) -> str:
     return " ".join(story.split())
 
 
-def format_stories(stories: list[str]) -> str:
-    """
-    Turn a list of normalized stories into the final text corpus:
-      <story1>\n\n<story2>\n\n...
-    """
-    return "\n\n".join(normalize_story(s) for s in stories)
-
-
 # ---------------------------------------------------------------------------
 # Encoding & writing
 # ---------------------------------------------------------------------------
@@ -85,12 +77,18 @@ def format_stories(stories: list[str]) -> str:
 def encode_stories(stories: list[str], enc: tiktoken.Encoding) -> np.ndarray:
     """
     Encode a list of stories to a flat uint16 numpy array of token ids.
-    The full corpus text is built first so that the \n\n separators between
-    stories are tokenized in context (consistent with how eval.py reads the
-    data at inference time).
+        For each story, append:
+            <normalized story tokens> + <|endoftext|> + "\n\n"
     """
-    corpus = format_stories(stories)
-    ids = enc.encode(corpus)
+    eot_id = enc.eot_token
+    newline_ids = enc.encode("\n\n")
+
+    ids: list[int] = []
+    for story in stories:
+        ids.extend(enc.encode(normalize_story(story)))
+        ids.append(eot_id)
+        ids.extend(newline_ids)
+
     return np.array(ids, dtype=np.uint16)
 
 

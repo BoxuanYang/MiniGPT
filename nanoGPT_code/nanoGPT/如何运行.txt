@@ -19,6 +19,15 @@ python data/rocmstories/prepare.py
 CUDA_VISIBLE_DEVICES=1 python train.py config/train_rocmstories.py --compile=False --batch_size=32
 
 评估模型:
+python eval.py   \
+ --init_from=resume   \
+ --input_file=data/rocmstories/test_two_blacklines.txt \
+ --out_dir=out-rocmstories   \
+ --device=cuda
+
+
+
+
 python eval_w_endoftext.py   \
  --init_from=resume   \
  --out_dir=out-rocmstories   \

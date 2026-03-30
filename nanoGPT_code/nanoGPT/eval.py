@@ -156,7 +156,7 @@ else:
     print("No meta.pkl found, assuming GPT-2 encodings...")
     enc = tiktoken.get_encoding("gpt2")
     encode = lambda s: enc.encode(s, allowed_special={"<|endoftext|>"})
-
+print(f"input_file: {input_file}")
 paragraphs, used_fmt = load_paragraphs(input_file, input_format, json_text_key)
 if max_paragraphs is not None and max_paragraphs >= 0:
     paragraphs = paragraphs[:max_paragraphs]
