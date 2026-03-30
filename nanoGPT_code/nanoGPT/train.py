@@ -30,6 +30,7 @@ from torch.distributed import init_process_group, destroy_process_group
 from model import GPTConfig, GPT
 
 # -----------------------------------------------------------------------------
+
 # default config values designed to train a gpt2 (124M) on OpenWebText
 # I/O
 out_dir = 'out'
@@ -43,6 +44,11 @@ init_from = 'scratch' # 'scratch' or 'resume' or 'gpt2*'
 wandb_log = False # disabled by default
 wandb_project = 'owt'
 wandb_run_name = 'gpt2' # 'run' + str(time.time())
+
+# Fine-tuning the model(for task 2)
+is_finetune = False
+out_dir_finetune = None
+
 # data
 dataset = 'openwebtext'
 gradient_accumulation_steps = 1
@@ -113,9 +119,12 @@ ctx = nullcontext() if device_type == 'cpu' else torch.amp.autocast(device_type=
 
 # poor man's data loader
 data_dir = os.path.join('data', dataset)
+print(f"data_dir: {data_dir}")
 def get_batch(split):
     # We recreate np.memmap every batch to avoid a memory leak, as per
     # https://stackoverflow.com/questions/45132940/numpy-memmap-memory-usage-want-to-iterate-once/61472122#61472122
+    
+
     if split == 'train':
         data = np.memmap(os.path.join(data_dir, 'train.bin'), dtype=np.uint16, mode='r')
     else:
@@ -177,7 +186,11 @@ elif init_from == 'resume':
             state_dict[k[len(unwanted_prefix):]] = state_dict.pop(k)
     model.load_state_dict(state_dict)
     iter_num = checkpoint['iter_num']
-    best_val_loss = checkpoint['best_val_loss']
+    print(f"iter_num: {iter_num}")
+    
+    if not is_finetune:
+        print(f"pretraining! resume best_val_loss")
+        best_val_loss = checkpoint['best_val_loss']
 elif init_from.startswith('gpt2'):
     print(f"Initializing from OpenAI GPT-2 weights: {init_from}")
     # initialize from OpenAI GPT-2 weights
@@ -255,7 +268,6 @@ running_mfu = -1.0
 
 start_time = time.time()
 while True:
-
     # determine and set the learning rate for this iteration
     lr = get_lr(iter_num) if decay_lr else learning_rate
     for param_group in optimizer.param_groups:
@@ -284,8 +296,13 @@ while True:
                     'best_val_loss': best_val_loss,
                     'config': config,
                 }
-                print(f"hi! saving checkpoint to {out_dir}")
-                torch.save(checkpoint, os.path.join(out_dir, 'ckpt.pt'))
+
+                if not is_finetune:
+                    print(f"pretraining! saving checkpoint to {out_dir}")
+                    torch.save(checkpoint, os.path.join(out_dir, 'ckpt.pt'))
+                else:
+                    print(f"finetuning! saving checkpoint to {out_dir_finetune}")
+                    torch.save(checkpoint, os.path.join(out_dir_finetune, 'ckpt.pt'))
     if iter_num == 0 and eval_only:
         break
 
@@ -328,7 +345,7 @@ while True:
             running_mfu = mfu if running_mfu == -1.0 else 0.9*running_mfu + 0.1*mfu
         
         # print(f"step {iter_num}: train loss {losses['train']:.4f}, val loss {losses['val']:.4f}")
-        print(f"iter {iter_num}: loss {lossf:.4f}, time {dt*1000:.2f}ms, mfu {running_mfu*100:.2f}%, train loss {losses['train']:.4f}, val loss {losses['val']:.4f}, best val loss: {best_val_loss:.4f}")
+        print(f"iter {iter_num}: loss {lossf:.4f}, time {dt*1000:.2f}ms, mfu {running_mfu*100:.2f}%, best val loss: {best_val_loss:.4f}")
     iter_num += 1
     local_iter_num += 1
 

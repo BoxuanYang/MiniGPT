@@ -20,7 +20,7 @@ block_size = 128  # shorter context
 # baby GPT
 n_layer = 12
 n_head = 12
-n_embd = 288
+n_embd = 276
 dropout = 0.2
 
 learning_rate = 1e-3
