@@ -24,7 +24,7 @@ CUDA_VISIBLE_DEVICES=1 python train.py config/train_rocmstories.py --compile=Fal
 评估模型:
 python eval.py   \
  --init_from=resume   \
- --input_file=data/rocmstories/test_with_eot.txt \
+ --input_file=data/rocmstories/test.txt \
  --out_dir=out-rocmstories   \
  --device=cuda
 
@@ -40,11 +40,31 @@ python sample_batch.py --init_from=resume --out_dir=out-rocmstories --device=cpu
 python data/task2/prepare_task2.py
 
 训练模型:
-python train.py config/finetune_task2.py --compile=False
+
+混合数据集训练:
+python train.py config/train_task2.py --compile=False --batch_size=32
+
+继续训练2000步:
+python train.py config/train_rocmstories.py \
+    --init_from='resume' \
+    --out_dir='out-task2' \
+    --dataset='rocmstories' \
+    --learning_rate=1e-4 \
+    --max_iters=17000 \
+    --lr_decay_iters=17000 \
+    --always_save_checkpoint=True \
+    --compile=False \
+    --batch_size=32
 
 模型评估:
 python eval.py   \
  --init_from=resume   \
- --input_file=data/task2/test_task2.txt \
- --out_dir=out-rocmstories-task2   \
+ --input_file=data/rocmstories/test_with_eot.txt \
+ --out_dir=out-task2   \
+ --device=cuda
+
+python eval.py   \
+ --init_from=resume   \
+ --input_file=data/rocmstories/test.txt \
+ --out_dir=out-task2   \
  --device=cuda
